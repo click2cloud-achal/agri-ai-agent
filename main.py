@@ -74,51 +74,6 @@ def get_db_connection():
     )
 
 
-# def save_or_update_transcript(caller_id, role, message, farmer_id="10667", token_id="0"):
-#     """Save or update conversation transcript in MongoDB"""
-#     try:
-#         lang_info = detect_language_mix(message)
-#         existing_doc = call_transcript_collection.find_one({"caller_id": caller_id})
-#
-#         if existing_doc:
-#             message_count = 0
-#             while f"message_{message_count + 1}" in existing_doc:
-#                 message_count += 1
-#
-#             next_message_num = message_count + 1
-#             update_data = {
-#                 f"message_{next_message_num}": message,
-#                 f"role_{next_message_num}": role,
-#                 f"language_{next_message_num}": lang_info['language_type'],
-#                 "created_at": datetime.now(timezone.utc)
-#             }
-#
-#             call_transcript_collection.update_one(
-#                 {"caller_id": caller_id},
-#                 {"$set": update_data}
-#             )
-#             print(
-#                 f"Updated transcript for caller {caller_id} with message_{next_message_num} ({lang_info['language_type']})")
-#
-#         else:
-#             new_doc = {
-#                 "_id": ObjectId(),
-#                 "token_id": token_id,
-#                 "farmer_id": farmer_id,
-#                 "caller_id": caller_id,
-#                 "role": role,
-#                 "message": message,
-#                 "language": lang_info['language_type'],
-#                 "created_at": datetime.now(timezone.utc)
-#             }
-#
-#             call_transcript_collection.insert_one(new_doc)
-#             print(f"Created new transcript for caller {caller_id} ({lang_info['language_type']})")
-#
-#     except Exception as e:
-#         print(f"Error saving transcript: {str(e)}")
-
-
 def extract_caller_id_from_stream_sid(stream_sid):
     """Extract caller identifier from Twilio stream SID"""
     if stream_sid:
@@ -126,27 +81,6 @@ def extract_caller_id_from_stream_sid(stream_sid):
         return caller_id[:10] if len(caller_id) > 10 else caller_id
     return "unknown"
 
-
-# def detect_language_mix(text):
-#     """Detect if text contains Hindi/Marathi mixed with English"""
-#     hindi_marathi_indicators = [
-#         'mera', 'mere', 'kya', 'hai', 'kaise', 'kaisa', 'khet', 'farm',
-#         'paani', 'mititi', 'fasal', 'crop', 'kaam', 'chahiye', 'ka', 'ki',
-#         'aur', 'mein', 'se', 'ko', 'bhi', 'cha', 'che', 'la', 'ल', 'च',
-#         'माझा', 'माझे', 'काय', 'कसे', 'कसा', 'शेत', 'पाणी', 'माती', 'पीक'
-#     ]
-#
-#     text_lower = text.lower()
-#     hindi_marathi_count = sum(1 for word in hindi_marathi_indicators if word in text_lower)
-#     english_words = len([w for w in text_lower.split() if w.isascii() and w.isalpha()])
-#
-#     return {
-#         'has_hindi_marathi': hindi_marathi_count > 0,
-#         'is_mixed': hindi_marathi_count > 0 and english_words > 0,
-#         'language_type': 'mixed' if hindi_marathi_count > 0 and english_words > 0
-#         else 'hindi_marathi' if hindi_marathi_count > 0
-#         else 'english'
-#     }
 
 
 def execute_stored_procedure(cursor, farm_id, action_mode):

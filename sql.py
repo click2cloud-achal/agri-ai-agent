@@ -55,7 +55,7 @@ def create_db_engine():
 def get_mongo_connection_string():
     """Get MongoDB connection string from settings."""
     return (
-        f"mongodb://admin:IndiaDB2024@192.168.3.12:28018/devDB"
+        f"{os.getenv('MONGO_URI')}"
     )
 
 async def get_user_by_phone(phone_number):
