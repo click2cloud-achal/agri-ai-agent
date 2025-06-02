@@ -7,3 +7,6 @@ python-dotenv==1.0.0
 pymssql
 flask-pymongo==2.3.0
 python-multipart
+plivo
+motor==3.7.0
+SQLAlchemy==2.0.39
