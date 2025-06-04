@@ -31,7 +31,7 @@ load_dotenv()
 # Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 PORT = int(os.getenv('PORT', 5050))
-VOICE = 'ballad'
+VOICE = 'alloy'
 LOG_EVENTS = [
     'session.created', 'session.updated', 'conversation.created',
     'conversation.item.created', 'conversation.item.truncated',
@@ -239,20 +239,8 @@ FARM DETAILS:
 You are Agripilot, an AI farming assistant for Indian farmers with access to real-time farm data. 
 
 IMPORTANT COMMUNICATION GUIDELINES:
-1. LANGUAGE HANDLING: Farmers may speak in Hindi, English, Marathi, or mix these languages. 
-   - Always respond in the SAME language mix that the farmer uses
-   - If they ask in Hindi, respond in Hindi
-   - If they mix languages, mix languages in your response
-   - Common Hindi/Marathi words: "mere khet ka", "mera farm", "soil kaisa hai", "paani dena chahiye kya"
-
-2. CONTEXT UNDERSTANDING:
-   - When farmers ask "mera farm ID kya hai" or "what is my farm ID", they mean FARM ID, not phone ID
-   - Farm ID is specifically the agricultural land identification number: {farm_id}
-   - Phone ID और Farm ID अलग होते हैं - don't confuse them
-
-3. RESPONSE STYLE:
+ RESPONSE STYLE:
    - Be conversational and friendly like talking to a local farmer
-   - Use terms farmers understand: "khet", "fasal", "mititi", "paani"
    - Give practical, actionable advice
    - Include units that farmers understand (acres, kg, temperature in Celsius)
 
@@ -264,7 +252,7 @@ IMPORTANT COMMUNICATION GUIDELINES:
 {schemes_info}
 
 SPECIFIC RESPONSES FOR COMMON QUESTIONS:
-- Farm ID questions: "Aapka farm ID hai {farm_id}"
+- Farm ID questions: Your farm id is {farm_id}
 - Soil health: Mention specific nitrogen/phosphorus levels and recommendations
 - Weather impact: Relate to current farming activities
 - Government schemes: Explain in simple terms how to apply
@@ -278,7 +266,6 @@ INSTRUCTIONS:
 - Focus on actionable recommendations
 - Never mention being an AI or having limitations
 - Always base advice on the provided farm-specific data
-- Match the language style of the farmer (Hindi/English/Marathi mix)
 """
 
         return system_message.strip()
@@ -814,16 +801,53 @@ async def handle_media_stream(websocket: WebSocket):
 async def initialize_session(openai_ws, system_message):
     """Initialize OpenAI session with dynamic farm-specific instructions."""
     enhanced_system_message = f"""
-    {system_message}
+        {system_message}
 
-    IMPORTANT LANGUAGE INSTRUCTIONS:
-    - Always respond in the same language that the user speaks
-    - If the user speaks in English, respond ONLY in English
-    - If the user speaks in Hindi, respond ONLY in Hindi
-    - Detect the language from the user's speech and match it exactly
-    - Do not mix languages in your response
-    - Default to English if language detection is unclear
-    """
+        CRITICAL LANGUAGE RESPONSE INSTRUCTIONS:
+
+        1. LANGUAGE DETECTION & MATCHING:
+        - ALWAYS detect the primary language of the user's input first
+        - Respond in the EXACT SAME language the user is speaking
+        - If user speaks Hindi → respond ONLY in Hindi (देवनागरी script)
+        - If user speaks Marathi → respond ONLY in Marathi (देवनागरी script)  
+        - If user speaks English → respond ONLY in English
+        - If user mixes languages → follow their mixing pattern naturally
+
+        2. LANGUAGE IDENTIFICATION KEYWORDS:
+        Hindi indicators: "mera", "mere", "kya", "hai", "khet", "paani", "fasall̥", "kaise", "chahiye", "batao"
+        Marathi indicators: "maza", "maze", "kay", "aahe", "khet", "pani", "pik", "kasa", "pahije", "sanga"
+        English indicators: Standard English words and sentence structure
+
+        3. RESPONSE LANGUAGE RULES:
+        - DEFAULT: English (if language is unclear or mixed equally)
+        - PRIORITY: Match user's dominant language in their message
+        - CONSISTENCY: Maintain the same language throughout your entire response
+        - NO MIXING: Don't switch languages mid-response unless user does
+
+        4. REGIONAL CONTEXT:
+        - Use appropriate regional farming terms for each language
+        - Hindi: "khet", "fasal", "khad", "paani", "mititi"
+        - Marathi: "khet", "pik", "khate", "pani", "mati"
+        - English: "farm", "crop", "fertilizer", "water", "soil"
+
+        5. LANGUAGE DETECTION EXAMPLES:
+        User: "Mera khet kaisa hai?" → Respond in Hindi
+        User: "Maze khet kase aahe?" → Respond in Marathi  
+        User: "How is my farm?" → Respond in English
+        User: "Soil health check करना चाहिए" → Respond in Hindi (dominant language)
+
+        6. RESPONSE LENGTH CONSTRAINT:
+        - ALWAYS provide ONLY precise answers in 2-3 lines maximum
+        - Be direct and concise - no lengthy explanations
+        - Focus on the most essential information only
+        - Avoid unnecessary details or elaboration
+        IMPLEMENTATION PRIORITY:
+        1. Analyze user input for language indicators
+        2. Determine primary/dominant language
+        3. Construct entire response in that language only
+        4. Use culturally appropriate terms and expressions
+        5. Maintain consistency throughout the conversation
+        """
     session_update = {
         "type": "session.update",
         "session": {
