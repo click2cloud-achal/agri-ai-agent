@@ -24,7 +24,7 @@ load_dotenv()
 class AzureOpenAIEmbeddings:
     def __init__(self):
         self.api_key = os.getenv('AZURE_OPENAI_API_EMBEDDING_KEY')
-        self.api_version = os.getenv('AZURE_OPENAI_API_VERSION')
+        self.api_version = os.getenv('AZURE_EMBEDDING_API_VERSION')
         self.endpoint = os.getenv('AZURE_OPENAI_EMBEDDING_ENDPOINT')
         self.deployment_name = os.getenv('AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME')
 
