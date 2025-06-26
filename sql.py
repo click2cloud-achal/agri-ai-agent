@@ -125,5 +125,32 @@ async def get_farm(id):
 
             return farm_data_dicts
     except Exception as e:
-        print(f"Error retrieving user by phone: {e}")
+        print(f"Error retrieving Farm by id: {e}")
+        return None
+
+async def get_farm_details(id, farm_id):
+    # Convert farm_id from string to integer
+    farm_id = int(farm_id)
+
+    engine = create_db_engine()
+    try:
+        with engine.connect() as connection:
+            query = text("""
+                SELECT * FROM AMMasterFarm 
+                WHERE MasterFarmId = :farm_id AND MasterLoginId = :id
+            """)
+            result = connection.execute(query, {"id": id, "farm_id": farm_id})
+            farm_data = result.fetchall()
+
+            if not farm_data:
+                print("No Farm data found")
+                return None
+
+            # Convert to list of dicts
+            columns = result.keys()
+            farm_data_dicts = [dict(zip(columns, row)) for row in farm_data]
+
+            return farm_data_dicts
+    except Exception as e:
+        print(f"Error retrieving farm details: {e}")
         return None
