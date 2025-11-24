@@ -529,6 +529,17 @@ async def handle_incoming_call(request: Request):
         # Get farm data
         user_id = user_details.get("MasterLoginId")
         farm_list = await get_farm(user_id)
+        if not farm_list:
+            response = plivoxml.ResponseElement()
+            response.add(plivoxml.SpeakElement(
+                "Sorry, you don’t have any farm added in your account. Please add a farm in Agripilot.AI. "
+                "If you need any assistance, feel free to reach out. Thank you for calling, and have a great day!",
+                voice="Polly.Salli",
+                language="en-US"
+            ))
+
+            return HTMLResponse('<?xml version="1.0" encoding="UTF-8"?>\n' + response.to_string(),
+                                media_type="application/xml")
         # Store session data for WebSocket access
 
         print(f"Stored session data for call {call_id}")
@@ -913,6 +924,9 @@ async def handle_media_stream(websocket: WebSocket):
             try:
                 response = requests.patch(
                     f"{GO_BACKEND_URL}/disconnectCallByAgronomist?tokenID={token_id}",
+                    headers={
+                        'X-APP-ID': 'Agripilot_Secure_Authentication2025'
+                    },
                     timeout=5
                 )
                 print(f"Disconnect API called successfully: {response.status_code}, {response.text}")
@@ -999,7 +1013,9 @@ async def handle_media_stream(websocket: WebSocket):
                                 response = requests.post(
                                     f'{GO_BACKEND_URL}/connectToAgenticAI',
                                     json={"farmerMasterLoginId": user_details.get('MasterLoginId')},
-                                    headers={'Content-Type': 'application/json'},
+                                    headers={'Content-Type': 'application/json',
+                                    'X-APP-ID': 'Agripilot_Secure_Authentication2025'
+                                },
                                     timeout=10
                                 )
                                 response_data = response.json()
@@ -1287,9 +1303,10 @@ async def initialize_session(openai_ws, system_message):
         1. LANGUAGE DETECTION & MATCHING:
         - ALWAYS detect the primary language of the user's input first
         - Respond in the EXACT SAME language the user is speaking
+        - The primary language will be English only
+        - If user speaks English → respond ONLY in English
         - If user speaks Hindi → respond ONLY in Hindi (देवनागरी script)
         - If user speaks Marathi → respond ONLY in Marathi (देवनागरी script)  
-        - If user speaks English → respond ONLY in English
         - If user mixes languages → follow their mixing pattern naturally
 
         2. LANGUAGE IDENTIFICATION KEYWORDS:
