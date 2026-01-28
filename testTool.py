@@ -1,3 +1,4 @@
+import audioop
 import os
 import json
 import base64
@@ -55,7 +56,7 @@ app = FastAPI()
 # mongo_db = mongo_client['devDB']
 # call_transcript_collection = mongo_db['CallTranscript']
 mongo_client = AsyncIOMotorClient(get_mongo_connection_string())
-db = mongo_client['devDB']
+db = mongo_client['agripilotmongodb']
 call_transcript_collection = db['CallTranscript']
 
 @dataclass
@@ -498,7 +499,134 @@ Provide practical agricultural advice and recommendations based on farming best 
 Keep responses helpful and action-oriented for Indian farmers.
 """
 
+async def extract_issue_and_recommendation(transcript):
+    """Extract issue and recommendation from call transcript using Azure OpenAI."""
+    from openai import AsyncAzureOpenAI
+    import os
 
+    prompt = f"""
+    From the call transcript below, extract:
+    1. Issue (1–2 lines): The main problem or concern discussed by the farmer
+    2. Recommendation (1–2 lines): The key advice or solution provided by the assistant
+
+    Format your response as:
+    Issue: [extracted issue]
+    Recommendation: [extracted recommendation]
+
+    Transcript:
+    {transcript}
+    """
+
+    try:
+        # Initialize Azure OpenAI client
+        azure_client = AsyncAzureOpenAI(
+            api_key=os.getenv('AZURE_OPENAI_API_KEY'),
+            api_version=os.getenv('AZURE_OPENAI_API_VERSION'),
+            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT')
+        )
+
+        result = await azure_client.chat.completions.create(
+            model=os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME'),
+            messages=[
+                {"role": "system", "content": "You are an expert at analyzing agricultural support call transcripts."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=300
+        )
+        return result.choices[0].message.content
+    except Exception as e:
+        print(f"Error extracting issue and recommendation: {e}")
+        import traceback
+        traceback.print_exc()
+        return "Issue: Unable to extract\nRecommendation: Unable to extract"
+
+async def retrieve_and_analyze_transcript(call_details):
+    """Retrieve full transcript, analyze it, and update the document."""
+    try:
+        # Retrieve the conversation document
+        conversation = await call_transcript_collection.find_one({
+            "token_id": call_details['token_id'],
+            "farmer_id": call_details['farmerMasterLoginId'],
+            "caller_id": call_details['callID']
+        })
+
+        if not conversation:
+            print("No conversation found to analyze")
+            return
+
+        # Build the complete transcript
+        transcript_parts = []
+
+        # Sort all message fields
+        message_fields = []
+        for key in conversation.keys():
+            if key.startswith('message'):
+                # Get corresponding role field
+                if key == 'message':
+                    role_key = 'role'
+                else:
+                    # Extract number from message_N
+                    parts = key.split('_')
+                    if len(parts) > 1:
+                        role_key = f'role_{parts[1]}'
+                    else:
+                        role_key = 'role'
+
+                if role_key in conversation:
+                    message_fields.append((key, role_key))
+
+        # Sort by message field name to maintain order
+        message_fields.sort(key=lambda x: (
+            0 if x[0] == 'message' else int(x[0].split('_')[1])
+        ))
+
+        # Build transcript text
+        for msg_key, role_key in message_fields:
+            role = conversation[role_key]
+            message = conversation[msg_key]
+            role_label = "Farmer" if role == "user" else "Assistant"
+            transcript_parts.append(f"{role_label}: {message}")
+
+        full_transcript = "\n".join(transcript_parts)
+        print(f"Full transcript:\n{full_transcript}\n")
+
+        # Extract issue and recommendation using AI
+        print("Analyzing transcript...")
+        analysis = await extract_issue_and_recommendation(full_transcript)
+        print(f"Analysis result:\n{analysis}\n")
+
+        # Parse the analysis result
+        issue = ""
+        recommendation = ""
+
+        for line in analysis.split('\n'):
+            line = line.strip()
+            if line.startswith('Issue:'):
+                issue = line.replace('Issue:', '').strip()
+            elif line.startswith('Recommendation:'):
+                recommendation = line.replace('Recommendation:', '').strip()
+
+        # Update the conversation document with analysis
+        from datetime import datetime
+        await call_transcript_collection.update_one(
+            {"_id": conversation["_id"]},
+            {
+                "$set": {
+                    "issue": issue,
+                    "recommendation": recommendation,
+                }
+            }
+        )
+
+        print(f"Successfully stored analysis for call {call_details['callID']}")
+        print(f"Issue: {issue}")
+        print(f"Recommendation: {recommendation}")
+
+    except Exception as e:
+        print(f"Error in retrieve_and_analyze_transcript: {e}")
+        import traceback
+        traceback.print_exc()
 @app.get("/", response_class=JSONResponse)
 async def root():
     return {"message": "Agripilot Dynamic Voice Assistant is running!", "status": "active"}
@@ -919,7 +1047,14 @@ async def handle_media_stream(websocket: WebSocket):
         connection_active = False
         token_id = call_details.get('token_id')
         GO_BACKEND_URL = os.getenv('GO_BACKEND_URL')
-
+        if call_details.get('token_id') and call_details.get('farmerMasterLoginId') and call_details.get('callID'):
+            print("Retrieving and analyzing call transcript...")
+            try:
+                await retrieve_and_analyze_transcript(call_details)
+            except Exception as e:
+                print(f"Error analyzing transcript: {e}")
+        else:
+            print("Incomplete call_details, skipping transcript analysis")
         if token_id:
             try:
                 response = requests.patch(
@@ -1196,34 +1331,33 @@ async def handle_media_stream(websocket: WebSocket):
                     await call_disconnect_api()
 
             async def handle_interruption():
-                """Handle when farmer interrupts the AI response."""
-                nonlocal response_start_timestamp, last_assistant_item
+                """Stop current assistant response immediately when the caller starts talking."""
+                nonlocal response_start_timestamp, last_assistant_item, current_assistant_response
 
-                if mark_queue and response_start_timestamp and last_assistant_item:
-                    elapsed_time = latest_media_timestamp - response_start_timestamp
+                print("INTERRUPTION DETECTED — cancelling running response")
 
-                    truncate_event = {
-                        "type": "conversation.item.truncate",
-                        "item_id": last_assistant_item,
-                        "content_index": 0,
-                        "audio_end_ms": elapsed_time
-                    }
+                try:
+                    # 1. Cancel ongoing assistant speech
                     if openai_ws and openai_ws.open:
-                        await openai_ws.send(json.dumps(truncate_event))
+                        await openai_ws.send(json.dumps({
+                            "type": "response.cancel"
+                        }))
 
-                    # Plivo clear event
-                    try:
-                        if websocket.client_state == WebSocketState.CONNECTED:
-                            await websocket.send_json({
-                                "event": "clear",
-                                "streamId": stream_id
-                            })
-                    except:
-                        pass  # Don't fail interruption handling if websocket is closed
-
+                    # 2. Clear any queued marks or speech timestamps
                     mark_queue.clear()
                     last_assistant_item = None
                     response_start_timestamp = None
+                    current_assistant_response = ""
+
+                    # 3. Tell Plivo to stop current playback immediately
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        await websocket.send_json({
+                            "event": "clear",
+                            "streamId": stream_id
+                        })
+
+                except Exception as e:
+                    print(f"Interruption error: {e}")
 
             async def send_mark(connection, stream_id):
                 """Send timing marks for audio synchronization."""

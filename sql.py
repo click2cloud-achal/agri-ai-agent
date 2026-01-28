@@ -104,28 +104,41 @@ async def get_user_by_phone(phone_number):
         if engine:
             engine.dispose()
 
-async def get_farm(id):
+async def get_farm(master_login_id):
     engine = create_db_engine()
     try:
         with engine.connect() as connection:
             query = text("""
-                SELECT * FROM AMMasterFarm 
-                WHERE MasterLoginId = :id
-            """)
-            result = connection.execute(query, {"id": id})
-            farm_data = result.fetchall()
+                DECLARE @return_value int;
 
-            if not farm_data:
+                EXEC @return_value = [dbo].[SP_AMMasterFarm]
+                    @MasterFarmId = NULL,
+                    @FarmTitle = NULL,
+                    @FarmCoordinate = NULL,
+                    @FarmLocation = NULL,
+                    @FarmArea = NULL,
+                    @FarmCreationDate = NULL,
+                    @MasterLoginId = NULL,
+                    @IsActive = NULL,
+                    @EnterById = :master_login_id,
+                    @ActionMode = 51,
+                    @SearchCondition = NULL;
+            """)
+
+            result = connection.execute(query, {"master_login_id": master_login_id})
+            rows = result.fetchall()
+
+            if not rows:
                 print("No Farm data found")
                 return None
 
-            # Convert to list of dicts
             columns = result.keys()
-            farm_data_dicts = [dict(zip(columns, row)) for row in farm_data]
+            farm_data_list = [dict(zip(columns, row)) for row in rows]
 
-            return farm_data_dicts
+            return farm_data_list
+
     except Exception as e:
-        print(f"Error retrieving Farm by id: {e}")
+        print(f"Error executing SP_AMMasterFarm: {e}")
         return None
 
 async def get_farm_details(id, farm_id):
