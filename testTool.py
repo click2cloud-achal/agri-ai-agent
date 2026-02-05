@@ -301,7 +301,6 @@ def extract_caller_id_from_stream_sid(stream_sid):
     return "unknown"
 
 
-
 def execute_stored_procedure(cursor, farm_id, action_mode):
     """Execute SP_Bot stored procedure"""
     params = {
@@ -448,56 +447,50 @@ FARM DETAILS:
             if crop_data.get('OperationTitle'):
                 crop_info += f"- Current Operation: {crop_data.get('OperationTitle')}\n"
 
-        # Build government schemes section
-        schemes_info = "\nAVAILABLE GOVERNMENT SCHEMES:\n"
-        if govt_schemes:
-            for scheme in govt_schemes:
-                schemes_info += f"- {scheme.get('GovtSchemeTitle', 'Unknown Scheme')}\n"
+        # CRITICAL: OPTIMIZED SYSTEM MESSAGE (under 100 lines)
+        system_message = f"""You are Agripilot, an AI farming assistant for Farm ID {farm_id}.
 
-        system_message = f"""
-You are Agripilot, an AI farming assistant for Indian farmers with access to real-time farm data. 
+CRITICAL COMMUNICATION RULES:
+1. ALWAYS respond in the SAME language the user speaks 
+2. NEVER switch languages mid-conversation
+3. Keep ALL responses under 3 sentences - be concise and actionable
+4. Be warm, conversational, and helpful like a local farming expert
+5. Never mention being an AI or having limitations
 
-IMPORTANT COMMUNICATION GUIDELINES:
- RESPONSE STYLE:
-   - Be conversational and friendly like talking to a local farmer
-   - Give practical, actionable advice
-   - Include units that farmers understand (acres, kg, temperature in Celsius)
-
+FARM DATA:
 {farm_info}
-{indices_info}
-{soil_info}
-{weather_info}
 {crop_info}
-{schemes_info}
+{weather_info}
+{soil_info}
+{indices_info}
 
-SPECIFIC RESPONSES FOR COMMON QUESTIONS:
-- Farm ID questions: Your farm id is {farm_id}
-- Soil health: Mention specific nitrogen/phosphorus levels and recommendations
-- Weather impact: Relate to current farming activities
-- Government schemes: Explain in simple terms how to apply
+QUICK RESPONSES:
+- Farm ID question: "Your farm ID is {farm_id}"
+- Soil questions: Reference specific values above
+- Weather advice: Use current weather data above
+- Crop advice: Consider current growth stage
 
 INSTRUCTIONS:
-- Provide specific, practical advice based on the above data
-- Address soil deficiencies and suggest appropriate fertilizers
-- Consider weather impacts on farming decisions  
-- Recommend relevant government schemes when applicable
-- Keep responses conversational and helpful for Indian farmers
-- Focus on actionable recommendations
-- Never mention being an AI or having limitations
-- Always base advice on the provided farm-specific data
-"""
+- Answer based on the farm data above
+- Give specific, practical recommendations
+- Keep responses conversational and brief (max 3 sentences)
+- Match the user's language automatically"""
 
         return system_message.strip()
 
     except Exception as e:
         print(f"Error generating dynamic system message: {str(e)}")
-        return f"""
-You are Agripilot, an AI farming assistant for Farm ID {farm_id}. 
-You can communicate in Hindi, English, and Marathi as needed.
-When farmers ask about their farm ID, tell them it's {farm_id}.
-Provide practical agricultural advice and recommendations based on farming best practices.
-Keep responses helpful and action-oriented for Indian farmers.
-"""
+        return f"""You are Agripilot, an AI farming assistant for Farm ID {farm_id}.
+
+**CRITICAL RULES:**
+**1. Always Respond in the SAME language as the user speaks:**
+     **IMPORTANT : YOU CAN SPEAK IN ANY LANUAGE AS USER SPEAK**
+
+2. Keep responses under 3 sentences
+3. Be conversational and practical
+
+Provide helpful farming advice based on Indian agricultural best practices."""
+
 
 async def extract_issue_and_recommendation(transcript):
     """Extract issue and recommendation from call transcript using Azure OpenAI."""
@@ -660,7 +653,7 @@ async def handle_incoming_call(request: Request):
         if not farm_list:
             response = plivoxml.ResponseElement()
             response.add(plivoxml.SpeakElement(
-                "Sorry, you don’t have any farm added in your account. Please add a farm in Agripilot.AI. "
+                "Sorry, you don't have any farm added in your account. Please add a farm in Agripilot.AI. "
                 "If you need any assistance, feel free to reach out. Thank you for calling, and have a great day!",
                 voice="Polly.Salli",
                 language="en-US"
@@ -1222,7 +1215,19 @@ async def handle_media_stream(websocket: WebSocket):
 
                         if response['type'] in LOG_EVENTS:
                             print(f"Event: {response['type']}")
+                        if response.get('type') == 'error':
+                            error_details = response.get('error', {})
+                            error_code = error_details.get('code', 'unknown')
+                            error_message = error_details.get('message', 'unknown')
+                            error_type = error_details.get('type', 'unknown')
 
+                            print(f"\n{'=' * 60}")
+                            print(f"OPENAI REALTIME API ERROR DETECTED:")
+                            print(f"Error Type: {error_type}")
+                            print(f"Error Code: {error_code}")
+                            print(f"Error Message: {error_message}")
+                            print(f"Full Error Object: {json.dumps(error_details, indent=2)}")
+                            print(f"{'=' * 60}\n")
                         # Handle user speech transcription
                         if response.get('type') == 'conversation.item.input_audio_transcription.completed':
                             transcript = response.get('transcript', '').strip()
@@ -1428,137 +1433,51 @@ async def send_function_output(realtime_ai_ws, call_id, output):
     await realtime_ai_ws.send(json.dumps({"type": "response.create"}))
 
 async def initialize_session(openai_ws, system_message):
-    """Initialize OpenAI session with dynamic farm-specific instructions."""
-    enhanced_system_message = f"""
-        {system_message}
+    """Initialize OpenAI session with OPTIMIZED configuration - CRITICAL FIX"""
 
-        CRITICAL LANGUAGE RESPONSE INSTRUCTIONS:
-
-        1. LANGUAGE DETECTION & MATCHING:
-        - ALWAYS detect the primary language of the user's input first
-        - Respond in the EXACT SAME language the user is speaking
-        - The primary language will be English only
-        - If user speaks English → respond ONLY in English
-        - If user speaks Hindi → respond ONLY in Hindi (देवनागरी script)
-        - If user speaks Marathi → respond ONLY in Marathi (देवनागरी script)  
-        - If user mixes languages → follow their mixing pattern naturally
-
-        2. LANGUAGE IDENTIFICATION KEYWORDS:
-        Hindi indicators: "mera", "mere", "kya", "hai", "khet", "paani", "fasall̥", "kaise", "chahiye", "batao"
-        Marathi indicators: "maza", "maze", "kay", "aahe", "khet", "pani", "pik", "kasa", "pahije", "sanga"
-        English indicators: Standard English words and sentence structure
-
-        3. RESPONSE LANGUAGE RULES:
-        - DEFAULT: English (if language is unclear or mixed equally)
-        - PRIORITY: Match user's dominant language in their message
-        - CONSISTENCY: Maintain the same language throughout your entire response
-        - NO MIXING: Don't switch languages mid-response unless user does
-
-        4. REGIONAL CONTEXT:
-        - Use appropriate regional farming terms for each language
-        - Hindi: "khet", "fasal", "khad", "paani", "mititi"
-        - Marathi: "khet", "pik", "khate", "pani", "mati"
-        - English: "farm", "crop", "fertilizer", "water", "soil"
-
-        5. LANGUAGE DETECTION EXAMPLES:
-        User: "Mera khet kaisa hai?" → Respond in Hindi
-        User: "Maze khet kase aahe?" → Respond in Marathi  
-        User: "How is my farm?" → Respond in English
-        User: "Soil health check करना चाहिए" → Respond in Hindi (dominant language)
-
-        6. RESPONSE LENGTH CONSTRAINT:
-        - ALWAYS provide ONLY precise answers in 2-3 lines maximum
-        - Be direct and concise - no lengthy explanations
-        - Focus on the most essential information only
-        - Avoid unnecessary details or elaboration
-        TOOL USAGE INSTRUCTIONS - WHEN TO CALL get_additional_context:
-
-        MANDATORY TOOL USAGE INSTRUCTIONS:
-
-        7. CONTEXT ANALYSIS & AUTOMATIC TOOL CALLING:
-        You have access to current farm data and context provided above. However, you MUST follow this decision-making process for EVERY user query:
-
-        STEP 1: Analyze if the user's question can be COMPLETELY answered using ONLY the farm-specific data provided in the system context above.
-
-        STEP 2: If the answer requires ANY additional agricultural knowledge, recommendations, suggestions, or information beyond what's explicitly provided in the farm context, you MUST call the get_additional_context tool.
-
-        STEP 3: Examples of when to ALWAYS call the tool:
-        - User asks for crop recommendations → CALL TOOL
-        - User asks about disease treatment → CALL TOOL  
-        - User asks about fertilizer suggestions → CALL TOOL
-        - User asks about irrigation timing → CALL TOOL
-        - User asks about pest management → CALL TOOL
-        - User asks about soil improvement → CALL TOOL
-        - User asks about weather-related farming advice → CALL TOOL
-        - User asks about general farming practices → CALL TOOL
-        - User asks about market prices or trends → CALL TOOL
-        - User asks comparative questions → CALL TOOL
-        - User asks "what should I do" type questions → CALL TOOL
-        - User asks for explanations of farming concepts → CALL TOOL
-
-        STEP 4: Examples of when you might NOT need to call the tool:
-        - User asks for specific data that's already in farm context (like "what's my soil pH?")
-        - User asks for simple factual data already provided (like "how many acres do I have?")
-        - Basic greetings or acknowledgments
-
-        8. MANDATORY TOOL CALLING PROCESS:
-        - For ANY query requiring agricultural knowledge/advice → ALWAYS call get_additional_context
-        - Pass the user's complete question/query to the tool
-        - Wait for the tool response before providing your answer
-        - Combine tool information with available farm data
-        - Always maintain the detected language throughout the process
-
-        9. DECISION FLOWCHART:
-        User Query → Can this be answered with ONLY farm data provided? 
-        ├─ YES → Answer directly using farm data only
-        └─ NO → MANDATORY: Call get_additional_context tool first, then answer
-
-        10. CRITICAL RULE:
-        When in doubt about whether to call the tool or not → ALWAYS CALL THE TOOL
-        It's better to provide comprehensive information than incomplete answers.
-
-        IMPLEMENTATION PRIORITY:
-        1. Analyze user input for language indicators
-        2. Determine if query needs additional agricultural knowledge (if yes → CALL TOOL)
-        3. Call get_additional_context tool for any agricultural advice/recommendations
-        4. Determine primary/dominant language from user input
-        5. Construct entire response in that detected language only
-        6. Use culturally appropriate terms and expressions
-        7. Maintain consistency and conciseness (2-3 lines max)
-        8. Prioritize calling the tool over providing incomplete information
-        """
     session_update = {
         "type": "session.update",
         "session": {
-            "turn_detection": {"type": "server_vad"},
+            # CRITICAL: Optimized VAD for faster responses
+            "turn_detection": {
+                "type": "server_vad",
+                "threshold": 0.5,  # Default sensitivity
+                "prefix_padding_ms": 300,  # Reduced padding for faster start
+                "silence_duration_ms": 500  # Faster cutoff (default is 700ms)
+            },
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
             "input_audio_transcription": {"model": "whisper-1"},
             "voice": VOICE,
-            "instructions": enhanced_system_message,
+            "instructions": system_message,
             "modalities": ["text", "audio"],
+            "temperature": 0.8,  # Slightly higher for more natural conversation
+
+            # CRITICAL: Limit response length for faster, more concise answers
+            "max_response_output_tokens": 150,
+
+            # Simplified tool description for better performance
             "tools": [
                 {
                     "type": "function",
                     "name": "get_additional_context",
-                    "description": "Fetch agricultural information from knowledge base",
+                    "description": "Search agricultural knowledge base ONLY when user explicitly asks about crops, diseases, or farming techniques not covered in farm data",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "The agricultural question to search for"
+                                "description": "Specific agricultural question"
                             }
                         },
                         "required": ["query"]
                     }
                 }
-            ],
-            "temperature": 0.7,
+            ]
         }
     }
 
-    print('Initializing Agripilot session with dynamic farm data and transcription')
+    print('Initializing OPTIMIZED session with concise instructions')
     await openai_ws.send(json.dumps(session_update))
 active_clients = {}
 
